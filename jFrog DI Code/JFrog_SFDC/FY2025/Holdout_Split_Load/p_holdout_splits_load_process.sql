@@ -224,15 +224,23 @@ Insert Into Delta(TableName='delta.holdover_split_transform',Overwrite=true,Unlo
     , a.Customer_Name
     , c.Split_Percentage__c
     , c.Penalty_percentage__c
-    , MaxValue(c.Split_Percentage__c, c.Penalty_percentage__c) AS Holdout_PCT
+
     ,  CASE WHEN a.Churn_Date IS NOT NULL AND StageName = '06-Closed Won' AND a.Churn_Date < :v_var_sales_data_pp_start_date THEN 'Recovery ARR'
+        WHEN a.Churn_Date IS NOT NULL  AND a.Churn_Date BETWEEN :v_var_sales_data_pp_start_date AND :v_var_sales_data_pp_end_date
+            AND ((a.StageName IN ('06-Closed Won', '06-closed lost') AND a.Order_Date > :v_var_sales_data_pp_end_date) OR a.StageName NOT IN ('06-Closed Won', '06-closed lost') )  
+            THEN 'Expiring ARR'
         WHEN a.StageName = '06-closed lost' THEN 'Closed Lost ARR'
         WHEN a.Final_ARR_Growth >0 THEN 'Upsell ARR'
         ELSE 'Downsell ARR' END AS ARR_Credit_Type
     , a.Order_Date
     , a.Tier
     , a.CurrencyIsoCode
-    , IF ARR_Credit_Type = 'Recovery ARR' THEN a.Related_Contracts_ARR ELSE a.Final_ARR_Growth END AS Final_ARR_Growth
+
+    , CASE WHEN ARR_Credit_Type IN ('Recovery ARR','Expiring ARR','Closed Lost ARR') THEN Nvl(c.Penalty_percentage__c,0) 
+        ELSE Nvl(c.Split_Percentage__c,0) END AS Holdout_PCT
+    -- , MaxValue(c.Split_Percentage__c, c.Penalty_percentage__c) AS Holdout_PCT 
+
+    , IF ARR_Credit_Type IN ('Recovery ARR','Expiring ARR') THEN a.Related_Contracts_ARR ELSE a.Final_ARR_Growth END AS Final_ARR_Growth
 
     FROM delta.holdover_split_dmp a
     JOIN (SELECT opp_id, Penalty_percentage__c, Split_Percentage__c FROM holdover_split_dmp WHERE Role = 'Former Owner') c ON a.opp_id = c.opp_id
@@ -256,7 +264,7 @@ INSERT INTO Delta(TableName='delta.prestage_holdout_split',Overwrite=true,Unlogg
     , a.Customer_Name AS Customer_Name
     , NULL AS Quantity
     , IF a.Role = 'Owner' THEN (a.Final_ARR_Growth*(a.Holdout_PCT/100))*-1
-    ELSE a.Final_ARR_Growth*(a.Holdout_PCT/100) END AS Amount 
+        ELSE a.Final_ARR_Growth*(a.Holdout_PCT/100) END AS Amount 
     , a.CurrencyIsoCode AS amount_unit_type_name
     , :v_var_sales_data_pp_end_date AS Incentive_Date
     , a.Order_Date AS Order_Date
