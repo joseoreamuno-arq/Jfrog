@@ -186,7 +186,7 @@ INSERT INTO Delta(TableName='delta.holdover_split_approval_process_dmp',Overwrit
     , Description__c
     FROM Approval_Process__c
     WHERE Description__c NOT IN (''SDR Approval Process'')
-    AND Approval_Sales_Manager__c = ''Yes''
+    AND Approval_Sales_Manager__c <> ''No''
     AND ((Opportunity__r.CloseDate >= '|| :v_var_sales_data_pp_start_date ||' AND Opportunity__r.CloseDate <= '|| :v_var_sales_data_pp_end_date||')
         OR (Opportunity__r.Churn_Date__c >= '|| :v_var_sales_data_pp_start_date ||' and Opportunity__r.Churn_Date__c <= '|| :v_var_sales_data_pp_end_date||' AND Opportunity__r.CloseDate > '|| :v_var_sales_data_pp_end_date||'))',
     CredentialName = 'sfdc_cred',
@@ -227,18 +227,18 @@ Insert Into Delta(TableName='delta.holdover_split_transform',Overwrite=true,Unlo
 
     ,  CASE WHEN a.Churn_Date IS NOT NULL AND StageName = '06-Closed Won' AND a.Churn_Date < :v_var_sales_data_pp_start_date THEN 'Recovery ARR'
         WHEN a.Churn_Date IS NOT NULL  AND a.Churn_Date BETWEEN :v_var_sales_data_pp_start_date AND :v_var_sales_data_pp_end_date
-            AND ((a.StageName IN ('06-Closed Won', '06-closed lost') AND a.Order_Date > :v_var_sales_data_pp_end_date) OR a.StageName NOT IN ('06-Closed Won', '06-closed lost') )  
+            AND ((a.StageName IN ('06-Closed Won', '06-Closed Lost') AND a.Order_Date > :v_var_sales_data_pp_end_date) OR a.StageName NOT IN ('06-Closed Won', '06-Closed Lost') )  
             THEN 'Expiring ARR'
-        WHEN a.StageName = '06-closed lost' THEN 'Closed Lost ARR'
+        WHEN a.StageName = '06-Closed Lost' THEN 'Closed Lost ARR'
         WHEN a.Final_ARR_Growth >0 THEN 'Upsell ARR'
         ELSE 'Downsell ARR' END AS ARR_Credit_Type
     , a.Order_Date
     , a.Tier
     , a.CurrencyIsoCode
 
-    , CASE WHEN ARR_Credit_Type IN ('Recovery ARR','Expiring ARR','Closed Lost ARR') THEN Nvl(c.Penalty_percentage__c,0) 
+    , CASE WHEN ARR_Credit_Type IN ('Recovery ARR','Closed Lost ARR') THEN Nvl(c.Penalty_percentage__c,0) 
+        WHEN ARR_Credit_Type IN ('Expiring ARR') THEN Nvl((c.Penalty_percentage__c)*-1,0) 
         ELSE Nvl(c.Split_Percentage__c,0) END AS Holdout_PCT
-    -- , MaxValue(c.Split_Percentage__c, c.Penalty_percentage__c) AS Holdout_PCT 
 
     , IF ARR_Credit_Type IN ('Recovery ARR','Expiring ARR') THEN a.Related_Contracts_ARR ELSE a.Final_ARR_Growth END AS Final_ARR_Growth
 
